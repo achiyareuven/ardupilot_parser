@@ -41,8 +41,8 @@ class Logger:
 
             if not logger.handlers:
                 formatter = logging.Formatter(
-                    fmt="%(asctime)s [%(levelname)s] %(name)s "
-                        " %(message)s",
+                    fmt="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s",
+
                     datefmt="%Y-%m-%d %H:%M:%S",
                 )
 

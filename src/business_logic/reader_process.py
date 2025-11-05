@@ -1,16 +1,16 @@
 from __future__ import annotations
 import struct
-from typing import Any, Dict, List, Optional, Iterable, Tuple
+from typing import Optional, Set, List, Dict, Any ,Iterable , Tuple ,Union
 from src.utils.constants import HEADER, FMT_TYPE, FMT_PAYLOAD_LEN, MIN_MAGIC_ADVANCE
-from src.models.schema import build_dict_schema
-from src.utils.helpers import cstr_to_text, is_valid_name , open_file_and_mmap
+from src.business_logic.schema import build_dict_schema
+from src.utils.helpers import cstr_to_text, is_valid_name , open_file_and_mmap,resolve_wanted_type_ids
 from struct import Struct
 from src.utils.logger import Logger
 
+
 logger = Logger.get_logger(__name__)
 
-
-class ReaderProcess:
+class BinParser:
     def __init__(self, file_path: str, round_like_pymav: bool = False):
         self.file_path = file_path
         self._file_handle, self._mmap = open_file_and_mmap(file_path)
@@ -32,7 +32,7 @@ class ReaderProcess:
             except Exception:
                 logger.exception("ReaderProcess.close: failed closing file %s", self.file_path)
 
-    def __enter__(self) -> "ReaderProcess":
+    def __enter__(self) -> "BinParser":
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -80,7 +80,7 @@ class ReaderProcess:
                     labels_str=labels_str,
                 )
             except ValueError:
-                logger.debug("parse_fmt_messages: build_dict_schema ValueError (name=%r, fmt=%r) pos=%d",
+                logger.info("parse_fmt_messages: build_dict_schema ValueError (name=%r, fmt=%r) pos=%d",
                              name, fmt_str, position)
                 offset = position + MIN_MAGIC_ADVANCE
                 continue
@@ -139,63 +139,167 @@ class ReaderProcess:
         return record
 
     def parse_messages(
-        self,
-        *,
-        start: Optional[int] = None,
-        end: Optional[int] = None,
-        wanted_types: Optional[Iterable[int]] = None,
+            self,
+            *,
+            start: Optional[int] = None,
+            end: Optional[int] = None,
+            wanted_names: Optional[Union[str, Iterable[str]]] = None,
     ) -> List[Dict[str, Any]]:
 
-        out: List[Dict[str, Any]] = []
+        if not self._name_to_type_id and self._schemas_dict_by_type:
+            self._name_to_type_id = {s["name"]: tid for tid, s in self._schemas_dict_by_type.items()}
 
+        data_len = len(self._mmap)
+        start = 0 if start is None else max(0, int(start))
+        end = data_len if end is None else min(int(end), data_len)
+
+        if wanted_names is None:
+            try:
+                return self._parse_multi_types_ranged(start=start, end=end, wanted_set=None)
+            except Exception:
+                logger.exception("parse_messages: unexpected failure in _parse_multi_types_ranged (no filter)")
+                return []
+
+        try:
+            wanted_types = resolve_wanted_type_ids(wanted_names, self._name_to_type_id)
+        except Exception:
+            logger.exception("parse_messages: failed to resolve wanted names %r", wanted_names)
+            return []
+
+        wanted_set = None if wanted_types is None else set(wanted_types)
+        if not wanted_set:
+            logger.warning("parse_messages: no matching types for %s", wanted_names)
+            return []
+
+        if len(wanted_set) == 1:
+            only_type = next(iter(wanted_set))
+            try:
+                return self._parse_one_type_ranged(start=start, end=end, type_id=only_type)
+            except Exception:
+                logger.exception("parse_messages: unexpected failure in _parse_one_type_ranged (type_id=%s)", only_type)
+                return []
+
+        try:
+            return self._parse_multi_types_ranged(start=start, end=end, wanted_set=wanted_set)
+        except Exception:
+            logger.exception("parse_messages: unexpected failure in _parse_multi_types_ranged (with filter)")
+            return []
+
+    def _parse_one_type_ranged(
+            self,
+            *,
+            start: int,
+            end: int,
+            type_id: int,
+    ) -> List[Dict[str, Any]]:
+
+        all_msgs: List[Dict[str, Any]] = []
         data = self._mmap
-        data_len = len(data)
-        offset = 0 if start is None else max(0, int(start))
-        stop_at = data_len if end is None else min(int(end), data_len)
-
-        if offset >= stop_at:
-            return out
-
-        logger.debug("parse_messages: range=[%d,%d) len=%d", offset, stop_at, data_len)
-
         find = data.find
         get_schema = self._schemas_dict_by_type.get
-        wanted_set = None if wanted_types is None else set(wanted_types)
+        _get_struct = self._get_struct
+        _build = self.build_message_dict
 
+        schema = get_schema(type_id)
+        if schema is None:
+            return all_msgs
+
+        total_len = schema["total_length"]
+        if total_len < 4:
+            return all_msgs
+
+        type_header = HEADER + bytes([type_id])
+        unpack_from = _get_struct(type_id).unpack_from
+
+        position = start
         while True:
-            position = find(HEADER, offset)
-            if position == -1 or position + 3 > stop_at:
+            position = find(type_header, position, end)
+            if position == -1:
                 break
 
-            msg_type = data[position + 2]
-            sch = get_schema(msg_type)
-            if sch is None:
-                offset = position + MIN_MAGIC_ADVANCE
+            end_msg = position + total_len
+            if end_msg > end:
+                break
+
+            if (end_msg + 2) <= end and data[end_msg:end_msg + 2] != HEADER:
+                position += 1
                 continue
-
-            end_msg = position + sch["total_length"]
-            if end_msg > stop_at:
-                break
 
             payload_start = position + 3
             try:
-                struct_obj = self._get_struct(msg_type)
-                values = struct_obj.unpack_from(data, payload_start)
+                values = unpack_from(data, payload_start)
             except struct.error:
-                logger.debug("parse_messages: struct.error at pos=%d type=%d, skipping to %d",
-                             position, msg_type, end_msg)
-                offset = end_msg
+                position += 1
                 continue
             except Exception:
-                logger.exception("parse_messages: unexpected unpack error at pos=%d type=%d", position, msg_type)
-                offset = end_msg
+                logger.debug("_parse_one_type_ranged: unexpected unpack error at pos=%d type_id=%d", position, type_id)
+                position += 1
                 continue
 
-            if (wanted_set is None) or (msg_type in wanted_set):
-                rec = self.build_message_dict(sch, values)
-                out.append(rec)
+            all_msgs.append(_build(schema, values))
+            position = end_msg
 
-            offset = end_msg
+        return all_msgs
 
-        logger.debug("parse_messages: produced %d messages", len(out))
-        return out
+    def _parse_multi_types_ranged(
+            self,
+            *,
+            start: int,
+            end: int,
+            wanted_set: Optional[Set[int]],
+    ) -> List[Dict[str, Any]]:
+        all_msgs: List[Dict[str, Any]] = []
+        data = self._mmap
+        find = data.find
+        get_schema = self._schemas_dict_by_type.get
+        _get_struct = self._get_struct
+        _build = self.build_message_dict
+
+        position = start
+        while True:
+            position = find(HEADER, position, end)
+            if position == -1:
+                break
+
+            msg_type = data[position + 2]
+            schema = get_schema(msg_type)
+            if schema is None:
+                position += 1
+                continue
+
+            end_msg = position + schema["total_length"]
+            if end_msg > end:
+                break
+
+            if (wanted_set is not None) and (msg_type not in wanted_set):
+                position = end_msg
+                continue
+
+            payload_start = position + 3
+            try:
+                values = _get_struct(msg_type).unpack_from(data, payload_start)
+            except struct.error:
+                position = end_msg
+                continue
+            except Exception:
+                logger.debug("_parse_multi_types_ranged: unexpected unpack error at pos=%d type=%d", position, msg_type)
+                position = end_msg
+                continue
+
+            all_msgs.append(_build(schema, values))
+            position = end_msg
+
+        return all_msgs
+
+if __name__ == "__main__":
+    from datetime import datetime
+    start = datetime.now()
+    path = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
+    with BinParser(path, round_like_pymav=True) as reader:
+        reader.parse_fmt_messages()
+        messages = reader.parse_messages()
+        end = datetime.now()
+    print(f"Parsed {len(messages)} messages in {end - start}")
+
+
+

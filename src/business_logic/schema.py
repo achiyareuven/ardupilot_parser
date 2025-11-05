@@ -1,6 +1,4 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from struct import Struct
 from typing import Any, Dict, List, Optional
 import math
 from src.utils.formats import build_struct_and_metadata
@@ -16,22 +14,6 @@ ROUNDING_FIELD_NAMES = {
 }
 
 
-@dataclass(frozen=True)
-class MessageSchema:
-    type_id: int
-    name: str
-    format_str: str
-    total_length: int
-    columns_raw: str
-    columns: List[str]
-    struct_obj: Struct
-    scale_factors: List[Optional[float]]
-    is_byte_field: List[bool]
-    field_count: int
-    round_decimals: List[Optional[int]]
-    round_mask: List[bool]
-
-
 def _derive_decimal_places(scale_factor: Optional[float]) -> Optional[int]:
     if scale_factor is None or scale_factor <= 0:
         return None
@@ -39,51 +21,6 @@ def _derive_decimal_places(scale_factor: Optional[float]) -> Optional[int]:
     rounded = round(log_value)
     return rounded if abs(log_value - rounded) < 1e-12 and rounded >= 0 else None
 
-
-def build_message_schema(
-    *, type_id: int, name: str, ardupilot_format: str,
-    total_length: int, labels_str: str
-) -> MessageSchema:
-    logger.debug(
-        "build_message_schema: type_id=%s name=%s format=%s total_len=%s",
-        type_id, name, ardupilot_format, total_length
-    )
-    try:
-        struct_obj, scale_factors, is_byte_field = build_struct_and_metadata(ardupilot_format)
-        columns = labels_str.split(",") if labels_str else []
-        field_count = min(len(columns), len(scale_factors), len(is_byte_field))
-
-        columns = columns[:field_count]
-        scale_factors = scale_factors[:field_count]
-        is_byte_field = is_byte_field[:field_count]
-
-        scale_factors = [None if s == 1.0 else s for s in scale_factors]
-
-        round_decimals = [_derive_decimal_places(s) for s in scale_factors]
-
-        round_mask = [(col in ROUNDING_FIELD_NAMES) and (nd is not None)
-                      for col, nd in zip(columns, round_decimals)]
-
-        schema = MessageSchema(
-            type_id=type_id,
-            name=name,
-            format_str=ardupilot_format,
-            total_length=total_length,
-            columns_raw=labels_str,
-            columns=columns,
-            struct_obj=struct_obj,
-            scale_factors=scale_factors,
-            is_byte_field=is_byte_field,
-            field_count=field_count,
-            round_decimals=round_decimals,
-            round_mask=round_mask,
-        )
-        logger.debug("build_message_schema: built schema for %s with %d fields", name, field_count)
-        return schema
-
-    except Exception as e:
-        logger.exception("build_message_schema: failed for name=%r format=%r: %s", name, ardupilot_format, e)
-        raise
 
 
 def build_dict_schema(
