@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union ,Literal
 import os
 from concurrent.futures import ProcessPoolExecutor,ThreadPoolExecutor,as_completed
-from src.business_logic.reader_process import BinParser
+from src.business_logic.bin_parsr import BinParser
 from src.business_logic.chunking import split_file_for_processes
 
 
