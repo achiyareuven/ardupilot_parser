@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 import re
 
-HEADER: bytes = b"\xA3\x95"
+HEADER: bytes = b"\xa3\x95"
 
 FMT_TYPE: int = 0x80
 

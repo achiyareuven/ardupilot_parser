@@ -1,12 +1,11 @@
 from __future__ import annotations
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union ,Literal
+
 import os
-from concurrent.futures import ProcessPoolExecutor,ThreadPoolExecutor,as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union
+
 from src.business_logic.bin_parsr import BinParser
 from src.business_logic.chunking import split_file_for_processes
-
-
-
 from src.utils.logger import Logger
 
 logger = Logger.get_logger(__name__)
@@ -32,7 +31,7 @@ class ParallelParser:
         self._wanted_raw = wanted_types
 
     @staticmethod
-    def _worker_chunk(
+    def worker_chunk(
         file_path: str,
         start_offset: int,
         end_offset: int,
@@ -42,8 +41,8 @@ class ParallelParser:
         name_to_id: Optional[Dict[str, int]] = None,
     ) -> List[Dict[str, Any]]:
         with BinParser(file_path, round_like_pymav=like_pymav) as reader:
-            reader._schemas_dict_by_type = schema_by_type
-            reader._name_to_type_id = name_to_id or {}
+            reader.schemas_dict_by_type = schema_by_type
+            reader.name_to_type_id = name_to_id or {}
             return reader.parse_messages(
                 start=start_offset,
                 end=end_offset,
@@ -51,16 +50,16 @@ class ParallelParser:
             )
 
     def parse(self) -> List[Dict[str, Any]]:
-        logger.info("Parse started | path=%s | mode=%s | like_pymav=%s",
-                    self.file_path, self.mode, self.round_like_pymav)
+        logger.info(
+            "Parse started | path=%s | mode=%s | like_pymav=%s", self.file_path, self.mode, self.round_like_pymav
+        )
 
         with BinParser(self.file_path, round_like_pymav=self.round_like_pymav) as r:
             r.parse_fmt_messages()
-            schemas_by_type = r._schemas_dict_by_type
-            schemas_by_name = r._name_to_type_id
+            schemas_by_type = r.schemas_dict_by_type
+            schemas_by_name = r.name_to_type_id
 
         logger.info("FMT scan completed | schemas=%d", len(schemas_by_type))
-
 
         num_workers = self.num_workers or (os.cpu_count() or 1)
         try:
@@ -80,7 +79,7 @@ class ParallelParser:
         max_workers = min(len(chunks), num_workers)
         logger.info("File split | chunks=%d | workers=%d", len(chunks), max_workers)
 
-        submit_fn = _worker_chunk if self.mode == "process" else self._worker_chunk
+        submit_fn = worker_chunk if self.mode == "process" else self.worker_chunk
         Executor = ProcessPoolExecutor if self.mode == "process" else ThreadPoolExecutor
 
         results_by_index: Dict[int, List[Dict[str, Any]]] = {}
@@ -120,22 +119,15 @@ class ParallelParser:
         return all_msgs
 
 
-_worker_chunk = ParallelParser._worker_chunk
-
+worker_chunk = ParallelParser.worker_chunk
 
 
 if __name__ == "__main__":
     from datetime import datetime
-    sta  = datetime.now()
-    path = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
-    parser = ParallelParser(
-        file_path=path,
-        mode="process",
-        num_workers=5,
-        round_like_pymav=True,
-        wanted_types="GPS"
 
-    )
+    sta = datetime.now()
+    path = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
+    parser = ParallelParser(file_path=path, mode="process", num_workers=20, round_like_pymav=True,wanted_types="GPS")
     messages = parser.parse()
     end = datetime.now()
     print(f"Time taken: {end - sta}")

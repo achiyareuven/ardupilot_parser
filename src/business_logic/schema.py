@@ -1,16 +1,53 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+
 import math
+from typing import Any, Dict, List, Optional
+
 from src.utils.formats import build_struct_and_metadata
 from src.utils.logger import Logger
 
 logger = Logger.get_logger(__name__)
 
 ROUNDING_FIELD_NAMES = {
-    "Lat", "Lng", "TLat", "TLng", "Pitch", "IPE", "Yaw", "IPN", "IYAW",
-    "DesPitch", "NavPitch", "Temp", "AltE", "VDop", "VAcc", "Roll", "HAGL",
-    "SM", "VWN", "VWE", "IVT", "SAcc", "TAW", "IPD", "ErrRP", "SVT", "SP", "TAT",
-    "GZ", "HDop", "NavRoll", "NavBrg", "TAsp", "HAcc", "DesRoll", "SH", "TBrg", "AX", "Alt"
+    "Lat",
+    "Lng",
+    "TLat",
+    "TLng",
+    "Pitch",
+    "IPE",
+    "Yaw",
+    "IPN",
+    "IYAW",
+    "DesPitch",
+    "NavPitch",
+    "Temp",
+    "AltE",
+    "VDop",
+    "VAcc",
+    "Roll",
+    "HAGL",
+    "SM",
+    "VWN",
+    "VWE",
+    "IVT",
+    "SAcc",
+    "TAW",
+    "IPD",
+    "ErrRP",
+    "SVT",
+    "SP",
+    "TAT",
+    "GZ",
+    "HDop",
+    "NavRoll",
+    "NavBrg",
+    "TAsp",
+    "HAcc",
+    "DesRoll",
+    "SH",
+    "TBrg",
+    "AX",
+    "Alt",
 }
 
 
@@ -22,7 +59,6 @@ def _derive_decimal_places(scale_factor: Optional[float]) -> Optional[int]:
     return rounded if abs(log_value - rounded) < 1e-12 and rounded >= 0 else None
 
 
-
 def build_dict_schema(
     type_id: int,
     name: str,
@@ -31,8 +67,7 @@ def build_dict_schema(
     labels_str: str,
 ) -> Dict[str, Any]:
     logger.debug(
-        "build_dict_schema: type_id=%s name=%s format=%s total_len=%s",
-        type_id, name, ardupilot_format, total_length
+        "build_dict_schema: type_id=%s name=%s format=%s total_len=%s", type_id, name, ardupilot_format, total_length
     )
     try:
         struct_obj, scale_factors, is_byte_field = build_struct_and_metadata(ardupilot_format)
@@ -49,8 +84,7 @@ def build_dict_schema(
         round_decimals: List[Optional[int]] = [_derive_decimal_places(s) for s in scale_factors]
 
         round_mask = tuple(
-            (col in ROUNDING_FIELD_NAMES) and (nd is not None)
-            for col, nd in zip(columns, round_decimals)
+            (col in ROUNDING_FIELD_NAMES) and (nd is not None) for col, nd in zip(columns, round_decimals)
         )
 
         schema_dict = {

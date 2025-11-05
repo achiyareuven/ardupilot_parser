@@ -1,25 +1,25 @@
 from __future__ import annotations
+
 import struct
-from typing import Optional, Set, List, Dict, Any ,Iterable , Tuple ,Union
-from src.utils.constants import HEADER, FMT_TYPE, FMT_PAYLOAD_LEN, MIN_MAGIC_ADVANCE
-from src.business_logic.schema import build_dict_schema
-from src.utils.helpers import cstr_to_text, is_valid_name , open_file_and_mmap,resolve_wanted_type_ids
 from struct import Struct
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
+
+from src.business_logic.schema import build_dict_schema
+from src.utils.constants import FMT_PAYLOAD_LEN, FMT_TYPE, HEADER, MIN_MAGIC_ADVANCE
+from src.utils.helpers import cstr_to_text, is_valid_name, open_file_and_mmap, resolve_wanted_type_ids
 from src.utils.logger import Logger
 
-
 logger = Logger.get_logger(__name__)
+
 
 class BinParser:
     def __init__(self, file_path: str, round_like_pymav: bool = False):
         self.file_path = file_path
         self._file_handle, self._mmap = open_file_and_mmap(file_path)
-        self._schemas_dict_by_type = {}
-        self._name_to_type_id = {}
+        self.schemas_dict_by_type: Dict[int, Dict[str, Any]] = {}
+        self.name_to_type_id: Dict[str, int] = {}
         self._struct_cache: Dict[int, Struct] = {}
         self.round_like_pymav: bool = round_like_pymav
-
-
 
     def close(self) -> None:
         try:
@@ -35,7 +35,12 @@ class BinParser:
     def __enter__(self) -> "BinParser":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[Any],
+    ) -> None:
         self.close()
 
     def parse_fmt_messages(self) -> None:
@@ -54,9 +59,7 @@ class BinParser:
 
             fmt_payload_start = position + 3
             try:
-                type_id, total_len, name_b, fmt_b, labels_b = struct.unpack_from(
-                    "<BB4s16s64s", data, fmt_payload_start
-                )
+                type_id, total_len, name_b, fmt_b, labels_b = struct.unpack_from("<BB4s16s64s", data, fmt_payload_start)
             except struct.error:
                 logger.debug("parse_fmt_messages: struct.error at pos=%d, skipping", position)
                 offset = position + MIN_MAGIC_ADVANCE
@@ -80,27 +83,32 @@ class BinParser:
                     labels_str=labels_str,
                 )
             except ValueError:
-                logger.info("parse_fmt_messages: build_dict_schema ValueError (name=%r, fmt=%r) pos=%d",
-                             name, fmt_str, position)
+                logger.info(
+                    "parse_fmt_messages: build_dict_schema ValueError (name=%r, fmt=%r) pos=%d", name, fmt_str, position
+                )
                 offset = position + MIN_MAGIC_ADVANCE
                 continue
             except Exception:
-                logger.exception("parse_fmt_messages: unexpected error building schema (name=%r, fmt=%r) pos=%d",
-                                 name, fmt_str, position)
+                logger.exception(
+                    "parse_fmt_messages: unexpected error building schema (name=%r, fmt=%r) pos=%d",
+                    name,
+                    fmt_str,
+                    position,
+                )
                 offset = position + MIN_MAGIC_ADVANCE
                 continue
 
-            self._schemas_dict_by_type[type_id] = schema
-            self._name_to_type_id = {s["name"]: tid for tid, s in self._schemas_dict_by_type.items()}
+            self.schemas_dict_by_type[type_id] = schema
+            self.name_to_type_id = {s["name"]: tid for tid, s in self.schemas_dict_by_type.items()}
 
             offset = position + MIN_MAGIC_ADVANCE
 
-        logger.debug("parse_fmt_messages: collected %d schemas", len(self._schemas_dict_by_type))
+        logger.debug("parse_fmt_messages: collected %d schemas", len(self.schemas_dict_by_type))
 
     def _get_struct(self, type_id: int) -> Struct:
         st = self._struct_cache.get(type_id)
         if st is None:
-            sch = self._schemas_dict_by_type[type_id]
+            sch = self.schemas_dict_by_type[type_id]
             st = Struct(sch["struct_fmt"])
             self._struct_cache[type_id] = st
         return st
@@ -139,15 +147,15 @@ class BinParser:
         return record
 
     def parse_messages(
-            self,
-            *,
-            start: Optional[int] = None,
-            end: Optional[int] = None,
-            wanted_names: Optional[Union[str, Iterable[str]]] = None,
+        self,
+        *,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        wanted_names: Optional[Union[str, Iterable[str]]] = None,
     ) -> List[Dict[str, Any]]:
 
-        if not self._name_to_type_id and self._schemas_dict_by_type:
-            self._name_to_type_id = {s["name"]: tid for tid, s in self._schemas_dict_by_type.items()}
+        if not self.name_to_type_id and self.schemas_dict_by_type:
+            self.name_to_type_id = {s["name"]: tid for tid, s in self.schemas_dict_by_type.items()}
 
         data_len = len(self._mmap)
         start = 0 if start is None else max(0, int(start))
@@ -161,7 +169,7 @@ class BinParser:
                 return []
 
         try:
-            wanted_types = resolve_wanted_type_ids(wanted_names, self._name_to_type_id)
+            wanted_types = resolve_wanted_type_ids(wanted_names, self.name_to_type_id)
         except Exception:
             logger.exception("parse_messages: failed to resolve wanted names %r", wanted_names)
             return []
@@ -186,19 +194,19 @@ class BinParser:
             return []
 
     def _parse_one_type_ranged(
-            self,
-            *,
-            start: int,
-            end: int,
-            type_id: int,
+        self,
+        *,
+        start: int,
+        end: int,
+        type_id: int,
     ) -> List[Dict[str, Any]]:
 
         all_msgs: List[Dict[str, Any]] = []
         data = self._mmap
         find = data.find
-        get_schema = self._schemas_dict_by_type.get
-        _get_struct = self._get_struct
-        _build = self.build_message_dict
+        get_schema = self.schemas_dict_by_type.get
+        get_struct = self._get_struct
+        build_msg = self.build_message_dict
 
         schema = get_schema(type_id)
         if schema is None:
@@ -209,7 +217,7 @@ class BinParser:
             return all_msgs
 
         type_header = HEADER + bytes([type_id])
-        unpack_from = _get_struct(type_id).unpack_from
+        unpack_from = get_struct(type_id).unpack_from
 
         position = start
         while True:
@@ -221,7 +229,7 @@ class BinParser:
             if end_msg > end:
                 break
 
-            if (end_msg + 2) <= end and data[end_msg:end_msg + 2] != HEADER:
+            if (end_msg + 2) <= end and data[end_msg : end_msg + 2] != HEADER:
                 position += 1
                 continue
 
@@ -236,24 +244,24 @@ class BinParser:
                 position += 1
                 continue
 
-            all_msgs.append(_build(schema, values))
+            all_msgs.append(build_msg(schema, values))
             position = end_msg
 
         return all_msgs
 
     def _parse_multi_types_ranged(
-            self,
-            *,
-            start: int,
-            end: int,
-            wanted_set: Optional[Set[int]],
+        self,
+        *,
+        start: int,
+        end: int,
+        wanted_set: Optional[Set[int]],
     ) -> List[Dict[str, Any]]:
         all_msgs: List[Dict[str, Any]] = []
         data = self._mmap
         find = data.find
-        get_schema = self._schemas_dict_by_type.get
-        _get_struct = self._get_struct
-        _build = self.build_message_dict
+        get_schema = self.schemas_dict_by_type.get
+        get_struct = self._get_struct
+        build_msg = self.build_message_dict
 
         position = start
         while True:
@@ -277,7 +285,7 @@ class BinParser:
 
             payload_start = position + 3
             try:
-                values = _get_struct(msg_type).unpack_from(data, payload_start)
+                values = get_struct(msg_type).unpack_from(data, payload_start)
             except struct.error:
                 position = end_msg
                 continue
@@ -286,20 +294,19 @@ class BinParser:
                 position = end_msg
                 continue
 
-            all_msgs.append(_build(schema, values))
+            all_msgs.append(build_msg(schema, values))
             position = end_msg
 
         return all_msgs
 
+
 if __name__ == "__main__":
     from datetime import datetime
-    start = datetime.now()
+
+    star = datetime.now()
     path = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
     with BinParser(path, round_like_pymav=True) as reader:
         reader.parse_fmt_messages()
         messages = reader.parse_messages()
-        end = datetime.now()
-    print(f"Parsed {len(messages)} messages in {end - start}")
-
-
-
+        en = datetime.now()
+    print(f"Parsed {len(messages)} messages in {en - star}")

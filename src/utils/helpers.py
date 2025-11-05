@@ -1,10 +1,13 @@
 from __future__ import annotations
-from .constants import NAME_PATTERN
-from typing import Dict, Optional, Iterable, Union, Set
-from struct import Struct
+
 import mmap
+from struct import Struct
+from typing import IO, Dict, Iterable, Optional, Set, Tuple, Union
 
 from src.utils.logger import Logger
+
+from .constants import NAME_PATTERN
+
 logger = Logger.get_logger(__name__)
 
 _F32 = Struct("<f")
@@ -14,8 +17,9 @@ def cstr_to_text(buf: bytes) -> str:
     try:
         return buf.split(b"\0", 1)[0].decode("ascii", "ignore")
     except Exception as e:
-        logger.exception("cstr_to_text: failed to decode buffer (len=%s): %s",
-                         len(buf) if buf is not None else "None", e)
+        logger.exception(
+            "cstr_to_text: failed to decode buffer (len=%s): %s", len(buf) if buf is not None else "None", e
+        )
         raise
 
 
@@ -64,14 +68,8 @@ def resolve_wanted_type_ids(
         raise
 
 
+def open_file_and_mmap(path: str) -> Tuple[IO[bytes], mmap.mmap]:
 
-
-
-def open_file_and_mmap(path: str):
-    """
-    פותח קובץ לקריאה וממפה אותו ל-mmap.
-    אם mmap נכשל – דואג לסגור את הקובץ.
-    """
     try:
         f = open(path, "rb")
     except FileNotFoundError:

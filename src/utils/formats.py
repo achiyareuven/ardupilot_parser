@@ -1,31 +1,33 @@
 from __future__ import annotations
+
 from struct import Struct
 from typing import Dict, List, Optional
+
 from src.utils.logger import Logger
 
 logger = Logger.get_logger(__name__)
 
 AP_FORMAT_TO_STRUCT_FMT: Dict[str, str] = {
     "a": "32h",
-    "b": "b",   # int8
-    "B": "B",   # uint8
-    "h": "h",   # int16
-    "H": "H",   # uint16
-    "i": "i",   # int32
-    "I": "I",   # uint32
-    "f": "f",   # float32
-    "d": "d",   # float64
-    "q": "q",   # int64
-    "Q": "Q",   # uint64
+    "b": "b",  # int8
+    "B": "B",  # uint8
+    "h": "h",  # int16
+    "H": "H",  # uint16
+    "i": "i",  # int32
+    "I": "I",  # uint32
+    "f": "f",  # float32
+    "d": "d",  # float64
+    "q": "q",  # int64
+    "Q": "Q",  # uint64
     "n": "4s",  # char[4]
-    "N": "16s", # char[16]
-    "Z": "64s", # char[64]
-    "c": "h",   # int16  (scaled 1/100)
-    "C": "H",   # uint16 (scaled 1/100)
-    "e": "i",   # int32  (scaled 1/100)
-    "E": "I",   # uint32 (scaled 1/100)
-    "L": "i",   # int32  (lat/lon * 1e-7)
-    "M": "B",   # uint8  (flight mode code)
+    "N": "16s",  # char[16]
+    "Z": "64s",  # char[64]
+    "c": "h",  # int16  (scaled 1/100)
+    "C": "H",  # uint16 (scaled 1/100)
+    "e": "i",  # int32  (scaled 1/100)
+    "E": "I",  # uint32 (scaled 1/100)
+    "L": "i",  # int32  (lat/lon * 1e-7)
+    "M": "B",  # uint8  (flight mode code)
 }
 
 POST_SCALE_FACTORS: Dict[str, float] = {
@@ -44,7 +46,6 @@ def build_struct_and_metadata(ardupilot_format: str) -> tuple[Struct, List[Optio
     is_bytes: List[bool] = []
 
     try:
-
 
         for fmt_char in ardupilot_format:
             struct_format_char = AP_FORMAT_TO_STRUCT_FMT.get(fmt_char)

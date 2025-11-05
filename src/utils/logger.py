@@ -1,13 +1,14 @@
-
 import logging
 import os
 from datetime import datetime
-from pathlib import Path
 from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
 from threading import RLock
+
 
 class Logger:
     """Cache per-module loggers; each name gets its own logger object."""
+
     _loggers: dict[str, logging.Logger] = {}
     _logs_dir: Path | None = None
     _lock = RLock()
@@ -42,7 +43,6 @@ class Logger:
             if not logger.handlers:
                 formatter = logging.Formatter(
                     fmt="%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d %(message)s",
-
                     datefmt="%Y-%m-%d %H:%M:%S",
                 )
 
@@ -62,7 +62,6 @@ class Logger:
                 fh.setLevel(level)
                 fh.setFormatter(formatter)
                 logger.addHandler(fh)
-
 
                 ch = logging.StreamHandler()
                 console_level_name = os.getenv("LOG_CONSOLE_LEVEL", "INFO").upper()

@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import mmap
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple
+
 from src.utils.constants import HEADER
 from src.utils.logger import Logger
 
@@ -88,7 +90,9 @@ def split_file_for_processes(
 
                 logger.debug(
                     "split_file_for_processes: data_len=%d chunk_size≈%d chunks=%d",
-                    data_len, approx_chunk_size_bytes, len(chunks)
+                    data_len,
+                    approx_chunk_size_bytes,
+                    len(chunks),
                 )
                 return chunks
 
