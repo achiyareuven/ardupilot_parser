@@ -57,7 +57,7 @@ def resolve_wanted_type_ids(
             if type_id is not None:
                 ids.add(type_id)
             else:
-                logger.debug("resolve_wanted_type_ids: name not found in schemas: %r", name)
+                logger.info("resolve_wanted_type_ids: name not found in schemas: %r", name)
 
         result = ids if ids else set()
         logger.debug("resolve_wanted_type_ids: matched %d id(s)", len(result))

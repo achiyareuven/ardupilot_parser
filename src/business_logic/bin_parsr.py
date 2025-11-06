@@ -307,6 +307,6 @@ if __name__ == "__main__":
     path = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
     with BinParser(path, round_like_pymav=True) as reader:
         reader.parse_fmt_messages()
-        messages = reader.parse_messages()
+        messages = reader.parse_messages(wanted_names="ATT")
         en = datetime.now()
     print(f"Parsed {len(messages)} messages in {en - star}")

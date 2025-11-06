@@ -8,6 +8,6 @@ FMT_TYPE: int = 0x80
 
 FMT_PAYLOAD_LEN: int = 86
 
-NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
+NAME_PATTERN = re.compile(r"^[A-Z0-9]{1,4}$")
 
 MIN_MAGIC_ADVANCE: int = 2

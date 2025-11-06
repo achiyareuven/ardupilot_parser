@@ -127,7 +127,7 @@ if __name__ == "__main__":
 
     sta = datetime.now()
     path = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
-    parser = ParallelParser(file_path=path, mode="process", num_workers=20, round_like_pymav=True,wanted_types="GPS")
+    parser = ParallelParser(file_path=path, mode="process", num_workers=20, round_like_pymav=True)
     messages = parser.parse()
     end = datetime.now()
     print(f"Time taken: {end - sta}")

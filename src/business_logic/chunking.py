@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import mmap
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -52,6 +53,11 @@ def split_file_for_processes(
     logger.debug("split_file_for_processes: path=%s num_procs=%d", file_path, num_procs)
 
     try:
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            logger.warning("split_file_for_processes: empty file %s", file_path)
+            return []
+
         with open(file_path, "rb") as file_handle:
             try:
                 data = mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)
