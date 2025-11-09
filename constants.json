@@ -1,0 +1,7 @@
+{
+  "HEADER_hex": "a395",
+  "FMT_TYPE": 128,
+  "FMT_PAYLOAD_LEN": 86,
+  "NAME_PATTERN": "^[A-Z0-9]{1,4}$",
+  "MIN_MAGIC_ADVANCE": 2
+}
