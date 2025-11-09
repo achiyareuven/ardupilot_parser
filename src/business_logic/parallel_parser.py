@@ -51,7 +51,8 @@ class ParallelParser:
 
     def parse(self) -> List[Dict[str, Any]]:
         logger.info(
-            "Parse started | path=%s | mode=%s | like_pymav=%s", self.file_path, self.mode, self.round_like_pymav
+            "Parse started | path=%s | mode=%s | like_pymav=%s",
+            self.file_path, self.mode, self.round_like_pymav
         )
 
         with BinParser(self.file_path, round_like_pymav=self.round_like_pymav) as r:
@@ -62,11 +63,14 @@ class ParallelParser:
         logger.info("FMT scan completed | schemas=%d", len(schemas_by_type))
 
         num_workers = self.num_workers or (os.cpu_count() or 1)
+        CHUNK_SIZE_BYTES = 5 * 1024 * 1024
+
         try:
             chunks: List[Tuple[int, int]] = split_file_for_processes(
                 file_path=self.file_path,
                 schemas_by_type=schemas_by_type,
                 num_procs=num_workers,
+                chunk_bytes=CHUNK_SIZE_BYTES,
             )
         except Exception:
             logger.exception("ParallelParser.parse: failed to split file into chunks")
@@ -74,12 +78,12 @@ class ParallelParser:
 
         if not chunks:
             logger.warning("ParallelParser.parse: no chunks produced (empty file or no valid messages?)")
-            return []
+            raise RuntimeError("No chunks produced")
 
         max_workers = min(len(chunks), num_workers)
         logger.info("File split | chunks=%d | workers=%d", len(chunks), max_workers)
 
-        submit_fn = worker_chunk if self.mode == "process" else self.worker_chunk
+        submit_fn = ParallelParser.worker_chunk if self.mode == "process" else self.worker_chunk
         Executor = ProcessPoolExecutor if self.mode == "process" else ThreadPoolExecutor
 
         results_by_index: Dict[int, List[Dict[str, Any]]] = {}
@@ -119,16 +123,4 @@ class ParallelParser:
         return all_msgs
 
 
-worker_chunk = ParallelParser.worker_chunk
 
-
-if __name__ == "__main__":
-    from datetime import datetime
-
-    sta = datetime.now()
-    path = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
-    parser = ParallelParser(file_path=path, mode="process", num_workers=20, round_like_pymav=True)
-    messages = parser.parse()
-    end = datetime.now()
-    print(f"Time taken: {end - sta}")
-    print(f"Parsed {len(messages)} messages.")

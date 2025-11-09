@@ -70,6 +70,9 @@ def resolve_wanted_type_ids(
 
 def open_file_and_mmap(path: str) -> Tuple[IO[bytes], mmap.mmap]:
 
+    if path[-4:] != ".bin":
+        logger.warning("open_file_and_mmap: file does not have .bin extension: %s", path)
+        raise
     try:
         f = open(path, "rb")
     except FileNotFoundError:

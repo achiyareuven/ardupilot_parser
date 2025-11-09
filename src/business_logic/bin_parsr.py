@@ -4,7 +4,7 @@ import struct
 from struct import Struct
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
 
-from src.business_logic.schema import build_dict_schema
+from src.utils.schema import build_dict_schema
 from src.utils.constants import FMT_PAYLOAD_LEN, FMT_TYPE, HEADER, MIN_MAGIC_ADVANCE
 from src.utils.helpers import cstr_to_text, is_valid_name, open_file_and_mmap, resolve_wanted_type_ids
 from src.utils.logger import Logger
@@ -65,9 +65,9 @@ class BinParser:
                 offset = position + MIN_MAGIC_ADVANCE
                 continue
 
-            name = cstr_to_text(name_b)
-            fmt_str = cstr_to_text(fmt_b)
-            labels_str = cstr_to_text(labels_b)
+            name = cstr_to_text(buf=name_b)
+            fmt_str = cstr_to_text(buf=fmt_b)
+            labels_str = cstr_to_text(buf=labels_b)
 
             if not is_valid_name(name):
                 logger.debug("parse_fmt_messages: invalid FMT name %r at pos=%d", name, position)
@@ -299,14 +299,3 @@ class BinParser:
 
         return all_msgs
 
-
-if __name__ == "__main__":
-    from datetime import datetime
-
-    star = datetime.now()
-    path = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
-    with BinParser(path, round_like_pymav=True) as reader:
-        reader.parse_fmt_messages()
-        messages = reader.parse_messages(wanted_names="ATT")
-        en = datetime.now()
-    print(f"Parsed {len(messages)} messages in {en - star}")
