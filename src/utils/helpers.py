@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import mmap
-from struct import Struct
 from typing import IO, Dict, Iterable, Optional, Set, Tuple, Union
 
 from src.utils.logger import Logger
@@ -10,7 +9,7 @@ from .constants import NAME_PATTERN
 
 logger = Logger.get_logger(__name__)
 
-_F32 = Struct("<f")
+
 
 
 def cstr_to_text(buf: bytes) -> str:

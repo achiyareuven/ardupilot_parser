@@ -17,7 +17,7 @@ def test_compare_binreader_pymavlink():
 
     # Read messages using BinParser
 
-    with BinParser(path, round_like_pymav=True) as reader:
+    with BinParser(path) as reader:
         reader.parse_fmt_messages()
         single_process = reader.parse_messages()
 
@@ -49,7 +49,7 @@ def test_parallel_parser():
         pyma.append(msg.to_dict())
 
     # Read messages using ParallelParser
-    processor = ParallelParser(path, num_workers=20,mode="process", round_like_pymav=True)
+    processor = ParallelParser(path, num_workers=20,mode="process")
     multi_process = processor.parse()
 
     # Compare lengths

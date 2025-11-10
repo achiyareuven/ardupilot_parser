@@ -5,7 +5,7 @@ from struct import Struct
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
 
 from src.utils.schema import build_dict_schema
-from src.utils.constants import FMT_PAYLOAD_LEN, FMT_TYPE, HEADER, MIN_MAGIC_ADVANCE
+from src.utils.constants import FMT_PAYLOAD_LEN, FMT_TYPE, HEADER, MIN_MAGIC_ADVANCE , SCALE_FACTOR_FIELDS, LATITUDE_LONGITUDE_FORMAT, BYTES_FIELDS
 from src.utils.helpers import cstr_to_text, is_valid_name, open_file_and_mmap, resolve_wanted_type_ids
 from src.utils.logger import Logger
 
@@ -13,13 +13,13 @@ logger = Logger.get_logger(__name__)
 
 
 class BinParser:
-    def __init__(self, file_path: str, round_like_pymav: bool = False):
+    def __init__(self, file_path: str):
         self.file_path = file_path
         self._file_handle, self._mmap = open_file_and_mmap(file_path)
         self.schemas_dict_by_type: Dict[int, Dict[str, Any]] = {}
         self.name_to_type_id: Dict[str, int] = {}
         self._struct_cache: Dict[int, Struct] = {}
-        self.round_like_pymav: bool = round_like_pymav
+
 
     def close(self) -> None:
         try:
@@ -106,43 +106,41 @@ class BinParser:
         logger.debug("parse_fmt_messages: collected %d schemas", len(self.schemas_dict_by_type))
 
     def _get_struct(self, type_id: int) -> Struct:
-        st = self._struct_cache.get(type_id)
-        if st is None:
+        struct_obj = self._struct_cache.get(type_id)
+        if struct_obj is None:
             sch = self.schemas_dict_by_type[type_id]
-            st = Struct(sch["struct_fmt"])
-            self._struct_cache[type_id] = st
-        return st
+            struct_obj = Struct(sch["struct_fmt"])
+            self._struct_cache[type_id] = struct_obj
+        return struct_obj
 
     def build_message_dict(self, schema: Dict[str, Any], values: Tuple[Any, ...]) -> Dict[str, Any]:
-        record: Dict[str, Any] = {"mavpackettype": schema["name"]}
 
+        record: Dict[str, Any] = {"mavpackettype": schema["name"]}
         columns = schema["columns"]
-        is_byte_field = schema["is_byte_field"]
-        scale_factors = schema["scale_factors"]
-        round_decimals = schema["round_decimals"]
-        round_mask = schema["round_mask"]
-        like_pymavlink = self.round_like_pymav
+        formats = schema["formats"]
         field_count = schema["field_count"]
 
-        for idx in range(field_count):
-            field_name = columns[idx]
-            value = values[idx]
+        for fmt, col, val in zip(formats, columns, values[:field_count]):
+            try:
+                if isinstance(val, (bytes, bytearray)):
+                    if fmt == "Z" and col in BYTES_FIELDS:
+                        record[col] = bytes(val)
+                    else:
+                        record[col] = bytes(val).partition(b"\0")[0].decode("ascii", "ignore")
+                    continue
 
-            if field_name == "Data":
-                record[field_name] = bytes(value)
-                continue
+                if fmt in SCALE_FACTOR_FIELDS:
+                    record[col] = val / 100.0
+                    continue
 
-            if is_byte_field[idx]:
-                value = value.partition(b"\0")[0].decode("ascii", "ignore")
+                elif fmt == LATITUDE_LONGITUDE_FORMAT:
+                    record[col] = val / 1e7
+                    continue
 
-            scale = scale_factors[idx]
-            if scale is not None:
-                value = value * scale
+                record[col] = val
 
-            if like_pymavlink and round_mask[idx]:
-                value = round(value, round_decimals[idx])
-
-            record[field_name] = value
+            except Exception:
+                record[col] = None
 
         return record
 
