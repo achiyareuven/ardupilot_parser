@@ -1,5 +1,5 @@
 import struct
-from src.business_logic.bin_parsr import BinParser
+from src.business_logic.bin_parser import BinParser
 from src.utils.constants import HEADER, FMT_TYPE, FMT_PAYLOAD_LEN
 
 
@@ -34,7 +34,7 @@ def test_parse_single_valid_fmt(tmp_path, monkeypatch):
     path.write_bytes(buf)
 
 
-    from src.business_logic import bin_parsr as mod
+    from src.business_logic import bin_parser as mod
     def fake_build_dict_schema(type_id, name, ardupilot_format, total_length, labels_str):
         return {
             "type_id": type_id,
@@ -45,7 +45,7 @@ def test_parse_single_valid_fmt(tmp_path, monkeypatch):
         }
     monkeypatch.setattr(mod, "build_dict_schema", fake_build_dict_schema)
 
-    with BinParser(str(p)) as reader:
+    with BinParser(str(path)) as reader:
         reader.parse_fmt_messages()
 
         assert reader.schemas_dict_by_type == {
@@ -100,12 +100,12 @@ def test_build_dict_schema_value_error_is_skipped(tmp_path, monkeypatch):
     path = tmp_path / "schema_fail.bin"
     path.write_bytes(buf)
 
-    from src.business_logic import bin_parsr as mod
+    from src.business_logic import bin_parser as mod
     def raise_value_error(*a, **k):
         raise ValueError("bad format")
     monkeypatch.setattr(mod, "build_dict_schema", raise_value_error)
 
-    with BinParser(str(p)) as reader:
+    with BinParser(str(path)) as reader:
         reader.parse_fmt_messages()
         assert reader.schemas_dict_by_type == {}
         assert reader.name_to_type_id == {}
@@ -119,7 +119,7 @@ def test_multiple_fmt_records_build_and_map_names(tmp_path, monkeypatch):
     path = tmp_path / "multi.bin"
     path.write_bytes(buf)
 
-    from src.business_logic import bin_parsr as mod
+    from src.business_logic import bin_parser as mod
     def fake_build_dict_schema(type_id, name, ardupilot_format, total_length, labels_str):
         return {"type_id": type_id, "name": name, "format_str": ardupilot_format, "total_length": total_length, "columns_raw": labels_str}
     monkeypatch.setattr(mod, "build_dict_schema", fake_build_dict_schema)

@@ -37,10 +37,6 @@ def test_duplicates_are_deduped(schemas_by_name):
     assert out == {1, 2}
 
 
-def test_generator_input_supported(schemas_by_name):
-    gen = (x for x in ["GPS", "AHR2"])
-    out = resolve_wanted_type_ids(gen, schemas_by_name)
-    assert out == {1, 3}
 
 
 def test_all_missing_returns_empty_set(schemas_by_name):

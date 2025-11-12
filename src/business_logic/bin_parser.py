@@ -83,7 +83,7 @@ class BinParser:
                     labels_str=labels_str,
                 )
             except ValueError:
-                logger.info(
+                logger.warning(
                     "parse_fmt_messages: build_dict_schema ValueError (name=%r, fmt=%r) pos=%d", name, fmt_str, position
                 )
                 offset = position + MIN_MAGIC_ADVANCE
@@ -108,14 +108,14 @@ class BinParser:
     def _get_struct(self, type_id: int) -> Struct:
         struct_obj = self._struct_cache.get(type_id)
         if struct_obj is None:
-            sch = self.schemas_dict_by_type[type_id]
-            struct_obj = Struct(sch["struct_fmt"])
+            schema = self.schemas_dict_by_type[type_id]
+            struct_obj = Struct(schema["struct_fmt"])
             self._struct_cache[type_id] = struct_obj
         return struct_obj
 
     def build_message_dict(self, schema: Dict[str, Any], values: Tuple[Any, ...]) -> Dict[str, Any]:
 
-        record: Dict[str, Any] = {"mavpackettype": schema["name"]}
+        msg_dict: Dict[str, Any] = {"mavpackettype": schema["name"]}
         columns = schema["columns"]
         formats = schema["formats"]
         field_count = schema["field_count"]
@@ -124,25 +124,25 @@ class BinParser:
             try:
                 if isinstance(val, (bytes, bytearray)):
                     if fmt == "Z" and col in BYTES_FIELDS:
-                        record[col] = bytes(val)
+                        msg_dict[col] = bytes(val)
                     else:
-                        record[col] = bytes(val).partition(b"\0")[0].decode("ascii", "ignore")
+                        msg_dict[col] = bytes(val).partition(b"\0")[0].decode("ascii", "ignore")
                     continue
 
                 if fmt in SCALE_FACTOR_FIELDS:
-                    record[col] = val / 100.0
+                    msg_dict[col] = val / 100.0
                     continue
 
                 elif fmt == LATITUDE_LONGITUDE_FORMAT:
-                    record[col] = val / 1e7
+                    msg_dict[col] = val / 1e7
                     continue
 
-                record[col] = val
+                msg_dict[col] = val
 
             except Exception:
-                record[col] = None
+                msg_dict[col] = None
 
-        return record
+        return msg_dict
 
     def parse_messages(
         self,
@@ -254,6 +254,7 @@ class BinParser:
         end: int,
         wanted_set: Optional[Set[int]],
     ) -> List[Dict[str, Any]]:
+
         all_msgs: List[Dict[str, Any]] = []
         data = self._mmap
         find = data.find
