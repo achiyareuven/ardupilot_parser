@@ -18,13 +18,10 @@ class Logger:
         if cls._logs_dir is not None:
             return cls._logs_dir
 
-        env_log_dir = os.getenv("LOG_DIR")
-        if env_log_dir:
-            logs_dir = Path(env_log_dir).expanduser().resolve()
-        else:
-            current_file = Path(__file__).resolve()
-            project_root = current_file.parents[2] if (current_file.parents[2] / "src").is_dir() else Path.cwd()
-            logs_dir = project_root / "logs"
+
+        current_file = Path(__file__).resolve()
+        project_root = current_file.parents[2] if (current_file.parents[2] / "src").is_dir() else Path.cwd()
+        logs_dir = project_root / "logs"
 
         logs_dir.mkdir(parents=True, exist_ok=True)
         cls._logs_dir = logs_dir
@@ -51,7 +48,7 @@ class Logger:
                 base_filename = f'app_{datetime.now().strftime("%Y-%m-%d")}.log'
                 file_path = logs_dir / base_filename
 
-                fh = TimedRotatingFileHandler(
+                file_handler = TimedRotatingFileHandler(
                     filename=str(file_path),
                     when="midnight",
                     interval=1,
@@ -59,15 +56,15 @@ class Logger:
                     encoding="utf-8",
                     utc=False,
                 )
-                fh.setLevel(level)
-                fh.setFormatter(formatter)
-                logger.addHandler(fh)
+                file_handler.setLevel(level)
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
 
-                ch = logging.StreamHandler()
-                console_level_name = os.getenv("LOG_CONSOLE_LEVEL", "INFO").upper()
-                ch.setLevel(getattr(logging, console_level_name, logging.INFO))
-                ch.setFormatter(formatter)
-                logger.addHandler(ch)
+                stream_handler = logging.StreamHandler()
+                console_level_name =  "INFO"
+                stream_handler.setLevel(getattr(logging, console_level_name, logging.INFO))
+                stream_handler.setFormatter(formatter)
+                logger.addHandler(stream_handler)
 
                 logger.debug(f"Logger initialized. Writing to: {file_path}")
 

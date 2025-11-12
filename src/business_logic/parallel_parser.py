@@ -4,7 +4,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union
 
-from src.business_logic.bin_parsr import BinParser
+from src.business_logic.bin_parser import BinParser
 from src.business_logic.chunking import split_file_for_processes
 from src.utils.constants import CHUNK_SIZE_BYTES
 from src.utils.logger import Logger
@@ -53,10 +53,10 @@ class ParallelParser:
             self.file_path, self.mode,
         )
 
-        with BinParser(self.file_path) as r:
-            r.parse_fmt_messages()
-            schemas_by_type = r.schemas_dict_by_type
-            schemas_by_name = r.name_to_type_id
+        with BinParser(self.file_path) as reader:
+            reader.parse_fmt_messages()
+            schemas_by_type = reader.schemas_dict_by_type
+            schemas_by_name = reader.name_to_type_id
 
         logger.info("FMT scan completed | schemas=%d", len(schemas_by_type))
 
@@ -81,7 +81,7 @@ class ParallelParser:
         max_workers = min(len(chunks), num_workers)
         logger.info("File split | chunks=%d | workers=%d", len(chunks), max_workers)
 
-        submit_fn = ParallelParser.worker_chunk if self.mode == "process" else self.worker_chunk
+        submit_function = ParallelParser.worker_chunk if self.mode == "process" else self.worker_chunk
         Executor = ProcessPoolExecutor if self.mode == "process" else ThreadPoolExecutor
 
         results_by_index: Dict[int, List[Dict[str, Any]]] = {}
@@ -89,7 +89,7 @@ class ParallelParser:
             with Executor(max_workers=max_workers) as pool:
                 futures = {
                     pool.submit(
-                        submit_fn,
+                        submit_function,
                         self.file_path,
                         start,
                         end,
@@ -118,14 +118,3 @@ class ParallelParser:
 
         logger.info("ParallelParser.parse: done, total messages=%d", len(all_msgs))
         return all_msgs
-
-
-if __name__ == "__main__":
-    from datetime import datetime
-    st = datetime.now()
-    test_file = r"C:\Users\achiy\Downloads\log_file_test_01.bin"
-    parser = ParallelParser(test_file, mode="process")
-    messages = parser.parse()
-    et = datetime.now()
-    print(f"Parsing time: {et - st}")
-    print(f"Total messages parsed: {len(messages)}")

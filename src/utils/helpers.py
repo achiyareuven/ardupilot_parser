@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import mmap
 from typing import IO, Dict, Iterable, Optional, Set, Tuple, Union
 
@@ -46,12 +47,6 @@ def resolve_wanted_type_ids(
         ids: set[int] = set()
 
         for name in names:
-            if isinstance(name, bytes):
-                try:
-                    name = name.decode("ascii", "ignore")
-                except Exception as e:
-                    logger.exception("resolve_wanted_type_ids: failed to decode bytes name: %s", e)
-                    continue
             type_id = schemas_by_name.get(name)
             if type_id is not None:
                 ids.add(type_id)
@@ -69,11 +64,16 @@ def resolve_wanted_type_ids(
 
 def open_file_and_mmap(path: str) -> Tuple[IO[bytes], mmap.mmap]:
 
-    if path[-4:] != ".bin":
+    if not path.lower().endswith(".bin"):
         logger.warning("open_file_and_mmap: file does not have .bin extension: %s", path)
-        raise
+        raise ValueError("Path must end with .bin")
+
+    if os.path.getsize(path) == 0:
+        logger.warning("open_file_and_mmap: file is empty: %s", path)
+        raise ValueError("Cannot mmap empty file")
+
     try:
-        f = open(path, "rb")
+        file_handler = open(path, "rb")
     except FileNotFoundError:
         logger.exception("File not found: %s", path)
         raise
@@ -85,13 +85,13 @@ def open_file_and_mmap(path: str) -> Tuple[IO[bytes], mmap.mmap]:
         raise
 
     try:
-        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        memory_map = mmap.mmap(file_handler.fileno(), 0, access=mmap.ACCESS_READ)
     except Exception:
         logger.exception("Failed to mmap file %s", path)
         try:
-            f.close()
+            file_handler.close()
         except Exception:
             logger.exception("Also failed closing file after mmap error")
         raise
 
-    return f, mm
+    return file_handler, memory_map

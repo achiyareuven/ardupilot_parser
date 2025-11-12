@@ -15,6 +15,7 @@ def find_next_message_start_offset(
     start_offset: int,
     schema_by_type: Dict[int, Dict[str, Any]],
 ) -> Optional[int]:
+
     data_len = len(data)
     search_offset = start_offset
     find = data.find
