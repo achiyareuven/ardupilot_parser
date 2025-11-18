@@ -13,7 +13,6 @@ logger = Logger.get_logger(__name__)
 
 
 class ParallelParser:
-
     def __init__(
         self,
         file_path: str,
@@ -37,20 +36,38 @@ class ParallelParser:
         schema_by_type: Dict[int, Dict[str, Any]],
         wanted_names: Optional[Union[str, Iterable[str]]] = None,
         name_to_id: Optional[Dict[str, int]] = None,
-    ) -> List[Dict[str, Any]]:
+        timebase: Optional[float] = None,
+        first_us_stamp: Optional[int] = None,
+        have_timebase: bool = False,
+        last_timestamp: Optional[float] = None,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+
+
         with BinParser(file_path) as reader:
             reader.schemas_dict_by_type = schema_by_type
             reader.name_to_type_id = name_to_id or {}
+
+            if  have_timebase and (timebase is not None):
+                reader.timestamp_builder.timebase = timebase
+                reader.timestamp_builder.first_us_stamp = first_us_stamp
+                reader.timestamp_builder.have_timebase = True
+
+                if last_timestamp is not None:
+                    reader.timestamp_builder.timestamp = last_timestamp
+                else:
+                    reader.timestamp_builder.timestamp = timebase
+
             return reader.parse_messages(
                 start=start_offset,
                 end=end_offset,
                 wanted_names=wanted_names,
             )
 
-    def parse(self) -> List[Dict[str, Any]]:
+    def parse(self) -> Dict[str, List[Dict[str, Any]]]:
         logger.info(
             "Parse started | path=%s | mode=%s ",
-            self.file_path, self.mode,
+            self.file_path,
+            self.mode,
         )
 
         with BinParser(self.file_path) as reader:
@@ -58,10 +75,21 @@ class ParallelParser:
             schemas_by_type = reader.schemas_dict_by_type
             schemas_by_name = reader.name_to_type_id
 
-        logger.info("FMT scan completed | schemas=%d", len(schemas_by_type))
+            reader.scan_timebase_from_log()
+            ts_builder = reader.timestamp_builder
+
+            have_timebase = ts_builder.have_timebase
+            timebase = ts_builder.timebase if have_timebase else None
+            first_us_stamp = ts_builder.first_us_stamp
+            last_timestamp = ts_builder.timestamp if have_timebase else None
+
+        logger.info(
+            "FMT scan completed | schemas=%d | have_timebase=%s",
+            len(schemas_by_type),
+            have_timebase,
+        )
 
         num_workers = self.num_workers or (os.cpu_count() or 1)
-
 
         try:
             chunks: List[Tuple[int, int]] = split_file_for_processes(
@@ -84,7 +112,7 @@ class ParallelParser:
         submit_function = ParallelParser.worker_chunk if self.mode == "process" else self.worker_chunk
         Executor = ProcessPoolExecutor if self.mode == "process" else ThreadPoolExecutor
 
-        results_by_index: Dict[int, List[Dict[str, Any]]] = {}
+        results_by_index: Dict[int, Dict[str, List[Dict[str, Any]]]] = {}
         try:
             with Executor(max_workers=max_workers) as pool:
                 futures = {
@@ -96,6 +124,10 @@ class ParallelParser:
                         schemas_by_type,
                         self._wanted_raw,
                         schemas_by_name,
+                        timebase,
+                        first_us_stamp,
+                        have_timebase,
+                        last_timestamp,
                     ): idx
                     for idx, (start, end) in enumerate(chunks)
                 }
@@ -107,14 +139,24 @@ class ParallelParser:
                         results_by_index[idx] = fut.result()
                     except Exception:
                         logger.exception("ParallelParser.parse: worker failed (chunk idx=%d)", idx)
-                        results_by_index[idx] = []
+                        results_by_index[idx] = {}
         except Exception:
             logger.exception("ParallelParser.parse: executor-level failure")
             raise
 
-        all_msgs: List[Dict[str, Any]] = []
+        merged: Dict[str, List[Dict[str, Any]]] = {}
         for i in range(len(chunks)):
-            all_msgs.extend(results_by_index.get(i, []))
+            chunk_msgs_by_type = results_by_index.get(i, {})
+            if not chunk_msgs_by_type:
+                continue
 
-        logger.info("ParallelParser.parse: done, total messages=%d", len(all_msgs))
-        return all_msgs
+            for msg_name, msg_list in chunk_msgs_by_type.items():
+                msgs = merged.get(msg_name)
+                if msgs is None:
+                    msgs = []
+                    merged[msg_name] = msgs
+                msgs.extend(msg_list)
+
+        total_msgs = sum(len(lst) for lst in merged.values())
+        logger.info("ParallelParser.parse: done, total messages=%d", total_msgs)
+        return merged

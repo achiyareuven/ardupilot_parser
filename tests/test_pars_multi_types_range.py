@@ -22,8 +22,6 @@ def _patch_parser(monkeypatch, struct_fmt):
     monkeypatch.setattr(mod.BinParser, "_get_struct", lambda self, t: Struct(struct_fmt))
 
 
-
-
 def test_reads_multiple_types_in_order(tmp_path, monkeypatch):
     struct_fmt = "<I"
     total_len = 3 + Struct(struct_fmt).size
@@ -47,8 +45,13 @@ def test_reads_multiple_types_in_order(tmp_path, monkeypatch):
 
         result = parser._parse_multi_types_ranged(start=0, end=len(data), wanted_set=None)
 
-    assert [msg["name"] for msg in result] == ["X", "Y", "X"]
-    assert [msg["values"][0] for msg in result] == [100, 200, 300]
+    # עכשיו result הוא dict: {"X": [...], "Y": [...]}
+    assert set(result.keys()) == {"X", "Y"}
+    x_vals = [m["values"][0] for m in result["X"]]
+    y_vals = [m["values"][0] for m in result["Y"]]
+
+    assert x_vals == [100, 300]
+    assert y_vals == [200]
 
 
 def test_filters_and_collects_multiple_types(tmp_path, monkeypatch):
@@ -79,12 +82,13 @@ def test_filters_and_collects_multiple_types(tmp_path, monkeypatch):
 
         result = parser._parse_multi_types_ranged(start=0, end=len(data), wanted_set={7, 9})
 
-    names = [msg["name"] for msg in result]
-    values = [msg["values"][0] for msg in result]
+    assert set(result.keys()) == {"Type7", "Type9"}
 
-    assert names == ["Type7", "Type9", "Type7", "Type9"]
-    assert values == [100, 300, 400, 600]
+    vals_7 = [m["values"][0] for m in result["Type7"]]
+    vals_9 = [m["values"][0] for m in result["Type9"]]
 
+    assert vals_7 == [100, 400]
+    assert vals_9 == [300, 600]
 
 
 def test_skips_unknown_schema(tmp_path, monkeypatch):
@@ -108,8 +112,8 @@ def test_skips_unknown_schema(tmp_path, monkeypatch):
 
         result = parser._parse_multi_types_ranged(start=0, end=len(data), wanted_set=None)
 
-    assert [msg["name"] for msg in result] == ["Known"]
-    assert [msg["values"][0] for msg in result] == [42]
+    assert list(result.keys()) == ["Known"]
+    assert [msg["values"][0] for msg in result["Known"]] == [42]
 
 
 def test_ignores_truncated_message_at_end(tmp_path, monkeypatch):
@@ -133,8 +137,8 @@ def test_ignores_truncated_message_at_end(tmp_path, monkeypatch):
 
         result = parser._parse_multi_types_ranged(start=0, end=len(data), wanted_set=None)
 
-    assert [msg["values"][0] for msg in result] == [111]
-
+    assert "T" in result
+    assert [msg["values"][0] for msg in result["T"]] == [111]
 
 
 def test_empty_wanted_set_returns_empty(tmp_path, monkeypatch):
@@ -159,7 +163,7 @@ def test_empty_wanted_set_returns_empty(tmp_path, monkeypatch):
 
         result = parser._parse_multi_types_ranged(start=0, end=len(data), wanted_set=set())
 
-    assert result == []
+    assert result == {}
 
 
 def test_unpack_error_skips_message_and_continues(tmp_path, monkeypatch):
@@ -184,6 +188,7 @@ def test_unpack_error_skips_message_and_continues(tmp_path, monkeypatch):
         def __init__(self, inner):
             self.inner = inner
             self.failed_once = False
+
         def unpack_from(self, buf, offset=0):
             if not self.failed_once:
                 self.failed_once = True
@@ -208,5 +213,5 @@ def test_unpack_error_skips_message_and_continues(tmp_path, monkeypatch):
             start=0, end=len(data), wanted_set=None
         )
 
-    assert [msg["values"][0] for msg in result] == [456]
-
+    assert "L" in result
+    assert [msg["values"][0] for msg in result["L"]] == [456]

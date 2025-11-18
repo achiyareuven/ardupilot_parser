@@ -5,8 +5,17 @@ from struct import Struct
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type, Union
 
 from src.utils.schema import build_dict_schema
-from src.utils.constants import FMT_PAYLOAD_LEN, FMT_TYPE, HEADER, MIN_MAGIC_ADVANCE , SCALE_FACTOR_FIELDS, LATITUDE_LONGITUDE_FORMAT, BYTES_FIELDS
+from src.utils.constants import (
+    FMT_PAYLOAD_LEN,
+    FMT_TYPE,
+    HEADER,
+    MIN_MAGIC_ADVANCE,
+    SCALE_FACTOR_FIELDS,
+    LATITUDE_LONGITUDE_FORMAT,
+    BYTES_FIELDS,
+)
 from src.utils.helpers import cstr_to_text, is_valid_name, open_file_and_mmap, resolve_wanted_type_ids
+from src.business_logic.timestamp_builder import TimestampBuilder
 from src.utils.logger import Logger
 
 logger = Logger.get_logger(__name__)
@@ -19,6 +28,7 @@ class BinParser:
         self.schemas_dict_by_type: Dict[int, Dict[str, Any]] = {}
         self.name_to_type_id: Dict[str, int] = {}
         self._struct_cache: Dict[int, Struct] = {}
+        self.timestamp_builder = TimestampBuilder()
 
 
     def close(self) -> None:
@@ -59,7 +69,9 @@ class BinParser:
 
             fmt_payload_start = position + 3
             try:
-                type_id, total_len, name_b, fmt_b, labels_b = struct.unpack_from("<BB4s16s64s", data, fmt_payload_start)
+                type_id, total_len, name_b, fmt_b, labels_b = struct.unpack_from(
+                    "<BB4s16s64s", data, fmt_payload_start
+                )
             except struct.error:
                 logger.debug("parse_fmt_messages: struct.error at pos=%d, skipping", position)
                 offset = position + MIN_MAGIC_ADVANCE
@@ -84,7 +96,10 @@ class BinParser:
                 )
             except ValueError:
                 logger.warning(
-                    "parse_fmt_messages: build_dict_schema ValueError (name=%r, fmt=%r) pos=%d", name, fmt_str, position
+                    "parse_fmt_messages: build_dict_schema ValueError (name=%r, fmt=%r) pos=%d",
+                    name,
+                    fmt_str,
+                    position,
                 )
                 offset = position + MIN_MAGIC_ADVANCE
                 continue
@@ -114,8 +129,7 @@ class BinParser:
         return struct_obj
 
     def build_message_dict(self, schema: Dict[str, Any], values: Tuple[Any, ...]) -> Dict[str, Any]:
-
-        msg_dict: Dict[str, Any] = {"mavpackettype": schema["name"]}
+        msg_dict: Dict[str, Any] = {}
         columns = schema["columns"]
         formats = schema["formats"]
         field_count = schema["field_count"]
@@ -142,15 +156,115 @@ class BinParser:
             except Exception:
                 msg_dict[col] = None
 
+        msg_name = schema["name"]
+
+        if msg_name in ("GPS", "GPS2") and "I" not in msg_dict:
+            msg_dict["I"] = 0 if msg_name == "GPS" else 1
+
+        timestamp = self.timestamp_builder.update_and_get(
+            msg_dict,
+            msg_name=schema["name"],
+            columns=columns,
+        )
+        if timestamp is not None:
+            msg_dict["timestamp"] = timestamp
+
         return msg_dict
 
+
+    def scan_timebase_from_log(self) -> None:
+
+        if self.timestamp_builder.have_timebase:
+            return
+
+        if not self.schemas_dict_by_type:
+            logger.debug("scan_timebase_from_log: no schemas available (parse_fmt_messages not called?)")
+            return
+
+        data = self._mmap
+        if data is None:
+            return
+
+        data_len = len(data)
+        find = data.find
+        get_schema = self.schemas_dict_by_type.get
+        get_struct = self._get_struct
+        ts_builder = self.timestamp_builder
+
+        position = 0
+        while True:
+            position = find(HEADER, position, data_len)
+            if position == -1:
+                break
+
+            msg_type = data[position + 2]
+            schema = get_schema(msg_type)
+            if schema is None:
+                position += 1
+                continue
+
+            total_len = schema["total_length"]
+            end_msg = position + total_len
+            if end_msg > data_len:
+                break
+
+            if (end_msg + 2) <= data_len and data[end_msg : end_msg + 2] != HEADER:
+                position += 1
+                continue
+
+            payload_start = position + 3
+            try:
+                values = get_struct(msg_type).unpack_from(data, payload_start)
+            except struct.error:
+                position = end_msg
+                continue
+            except Exception:
+                logger.debug(
+                    "scan_timebase_from_log: unexpected unpack error at pos=%d type=%d",
+                    position,
+                    msg_type,
+                )
+                position = end_msg
+                continue
+
+            columns = schema["columns"]
+            formats = schema["formats"]
+            field_count = schema["field_count"]
+
+            msg_dict: Dict[str, Any] = {}
+            for fmt, col, val in zip(formats, columns, values[:field_count]):
+                if col in ("TimeUS", "TimeMS", "GWk", "GMS"):
+                    msg_dict[col] = val
+
+            ts_builder.update_and_get(
+                msg_dict,
+                msg_name=schema["name"],
+                columns=columns,
+            )
+
+            if ts_builder.have_timebase and ts_builder.first_us_stamp is not None:
+                logger.debug(
+                    "scan_timebase_from_log: timebase initialized (timebase=%f, first_us=%s)",
+                    ts_builder.timebase,
+                    ts_builder.first_us_stamp,
+                )
+                break
+
+            position = end_msg
+
     def parse_messages(
-        self,
-        *,
-        start: Optional[int] = None,
-        end: Optional[int] = None,
-        wanted_names: Optional[Union[str, Iterable[str]]] = None,
-    ) -> List[Dict[str, Any]]:
+            self,
+            *,
+            start: Optional[int] = None,
+            end: Optional[int] = None,
+            wanted_names: Optional[Union[str, Iterable[str]]] = None,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+
+        if not self.timestamp_builder.have_timebase:
+            try:
+                self.scan_timebase_from_log()
+            except Exception:
+                logger.exception("failed to initialize timebase")
 
         if not self.name_to_type_id and self.schemas_dict_by_type:
             self.name_to_type_id = {s["name"]: tid for tid, s in self.schemas_dict_by_type.items()}
@@ -164,42 +278,55 @@ class BinParser:
                 return self._parse_multi_types_ranged(start=start, end=end, wanted_set=None)
             except Exception:
                 logger.exception("parse_messages: unexpected failure in _parse_multi_types_ranged (no filter)")
-                return []
+                return {}
 
         try:
             wanted_types = resolve_wanted_type_ids(wanted_names, self.name_to_type_id)
         except Exception:
             logger.exception("parse_messages: failed to resolve wanted names %r", wanted_names)
-            return []
+            return {}
 
-        wanted_set = None if wanted_types is None else set(wanted_types)
+        wanted_set: Optional[Set[int]] = None if wanted_types is None else set(wanted_types)
         if not wanted_set:
             logger.warning("parse_messages: no matching types for %s", wanted_names)
-            return []
+            return {}
 
         if len(wanted_set) == 1:
             only_type = next(iter(wanted_set))
+            schema = self.schemas_dict_by_type.get(only_type)
+            if schema is None:
+                logger.warning("parse_messages: schema not found for type_id=%s", only_type)
+                return {}
+
+            msg_name = schema["name"]
             try:
-                return self._parse_one_type_ranged(start=start, end=end, type_id=only_type)
+                messages = self._parse_one_type_ranged(
+                    start=start,
+                    end=end,
+                    type_id=only_type,
+                )
+                return {msg_name: messages}
             except Exception:
-                logger.exception("parse_messages: unexpected failure in _parse_one_type_ranged (type_id=%s)", only_type)
-                return []
+                logger.exception(
+                    "parse_messages: unexpected failure in _parse_one_type_ranged (type_id=%s)",
+                    only_type,
+                )
+                return {}
 
         try:
             return self._parse_multi_types_ranged(start=start, end=end, wanted_set=wanted_set)
         except Exception:
             logger.exception("parse_messages: unexpected failure in _parse_multi_types_ranged (with filter)")
-            return []
+            return {}
 
     def _parse_one_type_ranged(
-        self,
-        *,
-        start: int,
-        end: int,
-        type_id: int,
+            self,
+            *,
+            start: int,
+            end: int,
+            type_id: int,
     ) -> List[Dict[str, Any]]:
 
-        all_msgs: List[Dict[str, Any]] = []
         data = self._mmap
         find = data.find
         get_schema = self.schemas_dict_by_type.get
@@ -208,16 +335,18 @@ class BinParser:
 
         schema = get_schema(type_id)
         if schema is None:
-            return all_msgs
+            return []
 
         total_len = schema["total_length"]
         if total_len < 4:
-            return all_msgs
+            return []
 
         type_header = HEADER + bytes([type_id])
         unpack_from = get_struct(type_id).unpack_from
 
+        messages: List[Dict[str, Any]] = []
         position = start
+
         while True:
             position = find(type_header, position, end)
             if position == -1:
@@ -227,7 +356,7 @@ class BinParser:
             if end_msg > end:
                 break
 
-            if (end_msg + 2) <= end and data[end_msg : end_msg + 2] != HEADER:
+            if (end_msg + 2) <= end and data[end_msg: end_msg + 2] != HEADER:
                 position += 1
                 continue
 
@@ -238,29 +367,34 @@ class BinParser:
                 position += 1
                 continue
             except Exception:
-                logger.debug("_parse_one_type_ranged: unexpected unpack error at pos=%d type_id=%d", position, type_id)
+                logger.debug(
+                    "_parse_one_type_ranged: unexpected unpack error at pos=%d type_id=%d",
+                    position,
+                    type_id,
+                )
                 position += 1
                 continue
 
-            all_msgs.append(build_msg(schema, values))
+            messages.append(build_msg(schema, values))
             position = end_msg
 
-        return all_msgs
+        return messages
 
     def _parse_multi_types_ranged(
-        self,
-        *,
-        start: int,
-        end: int,
-        wanted_set: Optional[Set[int]],
-    ) -> List[Dict[str, Any]]:
+            self,
+            *,
+            start: int,
+            end: int,
+            wanted_set: Optional[Set[int]],
+    ) -> Dict[str, List[Dict[str, Any]]]:
 
-        all_msgs: List[Dict[str, Any]] = []
         data = self._mmap
         find = data.find
         get_schema = self.schemas_dict_by_type.get
         get_struct = self._get_struct
         build_msg = self.build_message_dict
+
+        messages_by_type: Dict[str, List[Dict[str, Any]]] = {}
 
         position = start
         while True:
@@ -289,12 +423,23 @@ class BinParser:
                 position = end_msg
                 continue
             except Exception:
-                logger.debug("_parse_multi_types_ranged: unexpected unpack error at pos=%d type=%d", position, msg_type)
+                logger.debug(
+                    "_parse_multi_types_ranged: unexpected unpack error at pos=%d type=%d",
+                    position,
+                    msg_type,
+                )
                 position = end_msg
                 continue
 
-            all_msgs.append(build_msg(schema, values))
+            msg_name = schema["name"]
+            messages = messages_by_type.get(msg_name)
+            if messages is None:
+                messages = []
+                messages_by_type[msg_name] = messages
+
+            msg_dict = build_msg(schema, values)
+            messages.append(msg_dict)
+
             position = end_msg
 
-        return all_msgs
-
+        return messages_by_type
