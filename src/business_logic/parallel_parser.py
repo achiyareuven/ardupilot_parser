@@ -13,6 +13,8 @@ logger = Logger.get_logger(__name__)
 
 
 class ParallelParser:
+    """Parallel wrapper around BinParser using processes or threads."""
+
     def __init__(
         self,
         file_path: str,
@@ -21,6 +23,10 @@ class ParallelParser:
         num_workers: Optional[int] = None,
         wanted_types: Optional[Union[str, Iterable[str]]] = None,
     ):
+        """
+        Initialize a ParallelParser for the given .BIN file.
+        mode selects between process-based and thread-based execution.
+        """
         if mode not in ("process", "thread"):
             raise ValueError("mode must be 'process' or 'thread'")
         self.file_path = file_path
@@ -41,6 +47,11 @@ class ParallelParser:
         have_timebase: bool = False,
         last_timestamp: Optional[float] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Parse a single byte range [start_offset, end_offset) in a worker.
+        Rebuilds a BinParser, injects schemas and timebase data, and returns
+        messages grouped by name.
+        """
 
 
         with BinParser(file_path) as reader:
@@ -69,6 +80,11 @@ class ParallelParser:
             self.file_path,
             self.mode,
         )
+        """
+        Parse the log in parallel and merge results from all chunks.
+        Splits the file into aligned chunks, dispatches them to workers and
+        returns a dict of messages grouped by name.
+        """
 
         with BinParser(self.file_path) as reader:
             reader.parse_fmt_messages()

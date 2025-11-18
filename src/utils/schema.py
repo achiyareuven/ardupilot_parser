@@ -7,6 +7,14 @@ logger = Logger.get_logger(__name__)
 
 
 def build_struct_and_formats(ardupilot_format: str) -> tuple[str, List[str]]:
+    """
+    Convert an ArduPilot format string (e.g., 'QfB') into a Python struct format.
+    Returns:
+        struct_fmt: A full struct format string with '<' prefix.
+        fmts:       A list of the original ArduPilot format characters in order.
+    Raises:
+        ValueError: If an unsupported format character is encountered.
+    """
 
     parts: List[str] = []
     fmts: List[str] = []
@@ -29,6 +37,17 @@ def build_dict_schema(
     total_length: int,
     labels_str: str,
 ) -> Dict[str, Any]:
+    """
+    Build a full schema dictionary for a message type based on FMT metadata.
+    The schema includes:
+        - struct format string
+        - list of column names
+        - ArduPilot format chars
+        - total message length
+        - field count used for unpacking
+    Returns:
+        A dictionary describing how to unpack and map message fields.
+    """
 
     logger.debug(
         "build_dict_schema: type_id=%s name=%s format=%s total_len=%s",

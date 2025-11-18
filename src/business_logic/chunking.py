@@ -15,6 +15,10 @@ def find_next_message_start_offset(
     start_offset: int,
     schema_by_type: Dict[int, Dict[str, Any]],
 ) -> Optional[int]:
+    """
+    Find the next valid message start (HEADER + known type) at or after start_offset.
+    Returns the byte offset of the message start, or None if no valid message is found.
+    """
 
     data_len = len(data)
     search_offset = start_offset
@@ -44,6 +48,11 @@ def split_file_for_processes(
     *,
     chunk_bytes: Optional[int] = None,
 ) -> List[Tuple[int, int]]:
+    """
+    Split a .BIN file into aligned byte ranges for parallel parsing.
+    Chunks are aligned to valid message boundaries based on schemas, and returned
+    as (start, end) offsets suitable for use with mmap slices.
+    """
 
     if chunk_bytes is None:
         if num_procs < 1:

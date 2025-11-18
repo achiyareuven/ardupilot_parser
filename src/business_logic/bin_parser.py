@@ -22,7 +22,11 @@ logger = Logger.get_logger(__name__)
 
 
 class BinParser:
+    """Memory-mapped parser for ArduPilot .BIN logs."""
+
     def __init__(self, file_path: str):
+        """Open the .BIN file and create a memory-mapped view for parsing."""
+
         self.file_path = file_path
         self._file_handle, self._mmap = open_file_and_mmap(file_path)
         self.schemas_dict_by_type: Dict[int, Dict[str, Any]] = {}
@@ -32,6 +36,7 @@ class BinParser:
 
 
     def close(self) -> None:
+        """Release the mmap and file handle resources."""
         try:
             if self._mmap is not None:
                 self._mmap.close()
@@ -54,6 +59,10 @@ class BinParser:
         self.close()
 
     def parse_fmt_messages(self) -> None:
+        """
+        Scan the log for FMT messages and build per-type schemas.
+        Populates schemas_dict_by_type and name_to_type_id based on FMT records.
+        """
         data = self._mmap
         data_len = len(data)
         pattern = HEADER + bytes([FMT_TYPE])
@@ -121,6 +130,8 @@ class BinParser:
         logger.debug("parse_fmt_messages: collected %d schemas", len(self.schemas_dict_by_type))
 
     def _get_struct(self, type_id: int) -> Struct:
+        """Return a cached Struct for the given type_id, creating it on first use."""
+
         struct_obj = self._struct_cache.get(type_id)
         if struct_obj is None:
             schema = self.schemas_dict_by_type[type_id]
@@ -129,6 +140,11 @@ class BinParser:
         return struct_obj
 
     def build_message_dict(self, schema: Dict[str, Any], values: Tuple[Any, ...]) -> Dict[str, Any]:
+        """
+        Convert unpacked message values into a dict, applying scaling and timestamp.
+        Handles special byte fields, GPS indices and delegates timestamp calculation
+        to TimestampBuilder.
+        """
         msg_dict: Dict[str, Any] = {}
         columns = schema["columns"]
         formats = schema["formats"]
@@ -173,6 +189,11 @@ class BinParser:
 
 
     def scan_timebase_from_log(self) -> None:
+        """
+        Perform a light first pass over the log to initialize the timebase.
+        Walks messages until TimestampBuilder has enough data to compute
+        timebase and first_us_stamp.
+        """
 
         if self.timestamp_builder.have_timebase:
             return
@@ -259,6 +280,11 @@ class BinParser:
             end: Optional[int] = None,
             wanted_names: Optional[Union[str, Iterable[str]]] = None,
     ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Parse messages in the given byte range and group them by message name.
+        Optionally filters by message names and ensures timestamps are available
+        by initializing the timebase if needed.
+        """
 
         if not self.timestamp_builder.have_timebase:
             try:
@@ -326,6 +352,10 @@ class BinParser:
             end: int,
             type_id: int,
     ) -> List[Dict[str, Any]]:
+        """
+        Parse all messages of a single type_id within the given byte range.
+        Validates message boundaries, unpacks payloads and builds message dicts.
+        """
 
         data = self._mmap
         find = data.find
@@ -387,6 +417,11 @@ class BinParser:
             end: int,
             wanted_set: Optional[Set[int]],
     ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Parse multiple message types in the given byte range.
+        Optionally filters by a set of type_ids and returns messages grouped
+        by ArduPilot message name.
+        """
 
         data = self._mmap
         find = data.find

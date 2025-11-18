@@ -5,17 +5,31 @@ from typing import Any, Dict, Optional, Sequence
 
 @dataclass
 class TimestampBuilder:
+    """
+    Build and maintain real timestamps for ArduPilot messages.
+    Tracks GPS-based timebase, first TimeUS value, and produces
+    absolute timestamps for each message during parsing.
+    """
+
     timebase: float = 0.0
     timestamp: float = 0.0
     first_us_stamp: Optional[int] = None
     have_timebase: bool = False
 
     def _gpsTimeToTime(self, week: int, msec: int) -> float:
+        """
+        Convert GPS (week, msec-of-week) into a Unix timestamp (seconds).
+        Applies GPS epoch offset and GPS–UTC leap second correction.
+        """
         epoch = 86400 * (10 * 365 + int((1980 - 1969) / 4) + 1 + 6 - 2)
         return epoch + 86400 * 7 * week + msec * 0.001 - 18.0
 
     @staticmethod
     def _type_has_good_TimeMS(msg_name: str) -> bool:
+        """
+        Return True if the message type has a reliable TimeMS field.
+        ACC* and GYR* messages often contain invalid or unstable TimeMS values.
+        """
         if msg_name.startswith("ACC"):
             return False
         if msg_name.startswith("GYR"):
@@ -28,6 +42,13 @@ class TimestampBuilder:
         columns: Sequence[str],
         msg: Dict[str, Any],
     ) -> bool:
+        """
+        Determine whether to use TimeMS (field 0) as a fallback timestamp.
+        Only used when:
+        - Message has a good TimeMS field.
+        - `columns[0] == "TimeMS"`.
+        - Time is monotonic (no backward jumps).
+        """
         if not self._type_has_good_TimeMS(msg_name):
             return False
 
@@ -50,6 +71,18 @@ class TimestampBuilder:
         msg_name: str,
         columns: Sequence[str],
     ) -> Optional[float]:
+        """
+        Update internal timestamp state using message fields and return timestamp.
+        Logic:
+        - Track first seen TimeUS value.
+        - Initialize timebase from GPS (GWk/GMS) + TimeUS when available.
+        - Once timebase is established, compute timestamps from:
+            - TimeUS (preferred),
+            - TimeMS (fallback for certain message types),
+            - or the last known timestamp.
+        Returns:
+            float timestamp in seconds, or None if timebase is not ready yet.
+        """
 
         if columns and columns[0] == "TimeUS" and "TimeUS" in msg_dict:
             us_val = int(msg_dict["TimeUS"])

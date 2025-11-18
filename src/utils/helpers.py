@@ -14,6 +14,10 @@ logger = Logger.get_logger(__name__)
 
 
 def cstr_to_text(buf: bytes) -> str:
+    """
+    Decode a null-terminated ASCII C-string.
+    Splits at the first NULL byte, decodes to ASCII, and ignores invalid characters.
+    """
     try:
         return buf.split(b"\0", 1)[0].decode("ascii", "ignore")
     except Exception as e:
@@ -24,6 +28,10 @@ def cstr_to_text(buf: bytes) -> str:
 
 
 def is_valid_name(name: str) -> bool:
+    """
+    Validate that a message name matches the ArduPilot NAME_PATTERN.
+    Returns True for valid names like: 'GPS', 'ATT', 'BARO', etc.
+    """
     try:
         return bool(name) and bool(NAME_PATTERN.match(name))
     except Exception as e:
@@ -35,6 +43,12 @@ def resolve_wanted_type_ids(
     wanted: Optional[Union[str, bytes, Iterable[Union[str, bytes]]]],
     schemas_by_name: Dict[str, int],
 ) -> Optional[Set[int]]:
+    """
+    Convert requested message names into a set of type IDs.
+    - Accepts a single name or a list of names.
+    - Returns a set of matching type_ids (possibly empty).
+    - Returns None if no filtering is requested.
+    """
     try:
         if wanted is None:
             return None
@@ -63,6 +77,14 @@ def resolve_wanted_type_ids(
 
 
 def open_file_and_mmap(path: str) -> Tuple[IO[bytes], mmap.mmap]:
+    """
+    Open a .BIN file in read-only mode and return (file_handle, mmap).
+    Validates:
+    - Path ends with .bin
+    - File exists
+    - File is not empty
+    Raises exceptions on any failure and logs details.
+    """
 
     if not path.lower().endswith(".bin"):
         logger.warning("open_file_and_mmap: file does not have .bin extension: %s", path)
