@@ -64,24 +64,16 @@ class TimestampBuilder:
 
         return True
 
-    def update_and_get(
-        self,
-        msg_dict: Dict[str, Any],
-        *,
-        msg_name: str,
-        columns: Sequence[str],
-    ) -> Optional[float]:
+    def update_timebase_from_msg(
+            self,
+            msg_dict: Dict[str, Any],
+            *,
+            columns: Sequence[str],
+    ) -> None:
         """
-        Update internal timestamp state using message fields and return timestamp.
-        Logic:
-        - Track first seen TimeUS value.
-        - Initialize timebase from GPS (GWk/GMS) + TimeUS when available.
-        - Once timebase is established, compute timestamps from:
-            - TimeUS (preferred),
-            - TimeMS (fallback for certain message types),
-            - or the last known timestamp.
-        Returns:
-            float timestamp in seconds, or None if timebase is not ready yet.
+        Update internal timebase state during the initial scan.
+        Tracks first TimeUS and initializes timebase if GPS+TimeUS are available.
+        Does not return a timestamp.
         """
 
         if columns and columns[0] == "TimeUS" and "TimeUS" in msg_dict:
@@ -89,39 +81,53 @@ class TimestampBuilder:
             if self.first_us_stamp is None:
                 self.first_us_stamp = us_val
 
-        if not self.have_timebase:
-            gwk = msg_dict.get("GWk")
-            gms = msg_dict.get("GMS")
-            timeus = msg_dict.get("TimeUS")
+        if self.have_timebase:
+            return
 
-            if (
+        gwk = msg_dict.get("GWk")
+        gms = msg_dict.get("GMS")
+        timeus = msg_dict.get("TimeUS")
+
+        if (
                 isinstance(gwk, (int, float))
                 and isinstance(gms, (int, float))
                 and isinstance(timeus, (int, float))
-            ):
-                gps_time = self._gpsTimeToTime(int(gwk), int(gms))
+        ):
+            gps_time = self._gpsTimeToTime(int(gwk), int(gms))
+            self.timebase = gps_time - timeus * 1e-6
 
-                self.timebase = gps_time - timeus * 1.0e-6
+            first_us = timeus if self.first_us_stamp is None else self.first_us_stamp
+            self.timestamp = self.timebase + first_us * 1e-6
 
-                first_us = timeus if self.first_us_stamp is None else self.first_us_stamp
-                self.timestamp = self.timebase + first_us * 1.0e-6
+            self.first_us_stamp = int(first_us)
+            self.have_timebase = True
 
-                self.first_us_stamp = int(first_us)
-                self.have_timebase = True
+    def compute_timestamp_for_msg(
+            self,
+            msg_dict: Dict[str, Any],
+            *,
+            msg_name: str,
+            columns: Sequence[str],
+    ) -> Optional[float]:
+        """
+        Compute message timestamp using an existing timebase.
+        Uses TimeUS when available, otherwise falls back to TimeMS or last timestamp.
+        Returns None if timebase is not ready.
+        """
 
         if not self.have_timebase:
             return None
 
         if columns and columns[0] == "TimeUS" and "TimeUS" in msg_dict:
             timeus = msg_dict["TimeUS"]
-            timestamp = self.timebase + timeus * 1.0e-6
-            self.timestamp = timestamp
-            return timestamp
+            ts = self.timebase + timeus * 1e-6
+            self.timestamp = ts
+            return ts
 
         if self._should_use_msec_field0(msg_name, columns, msg_dict):
             time_ms = msg_dict["TimeMS"]
-            timestamp = self.timebase + time_ms * 1.0e-3
-            self.timestamp = timestamp
-            return timestamp
+            ts = self.timebase + time_ms * 1e-3
+            self.timestamp = ts
+            return ts
 
         return self.timestamp

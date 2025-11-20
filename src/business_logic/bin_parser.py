@@ -177,7 +177,7 @@ class BinParser:
         if msg_name in ("GPS", "GPS2") and "I" not in msg_dict:
             msg_dict["I"] = 0 if msg_name == "GPS" else 1
 
-        timestamp = self.timestamp_builder.update_and_get(
+        timestamp = self.timestamp_builder.compute_timestamp_for_msg(
             msg_dict,
             msg_name=schema["name"],
             columns=columns,
@@ -257,9 +257,8 @@ class BinParser:
                 if col in ("TimeUS", "TimeMS", "GWk", "GMS"):
                     msg_dict[col] = val
 
-            ts_builder.update_and_get(
-                msg_dict,
-                msg_name=schema["name"],
+            ts_builder.update_timebase_from_msg(
+                msg_dict=msg_dict,
                 columns=columns,
             )
 
@@ -296,8 +295,8 @@ class BinParser:
             self.name_to_type_id = {s["name"]: tid for tid, s in self.schemas_dict_by_type.items()}
 
         data_len = len(self._mmap)
-        start = 0 if start is None else max(0, int(start))
-        end = data_len if end is None else min(int(end), data_len)
+        start = 0 if start is None else start
+        end = data_len if end is None else end
 
         if wanted_names is None:
             try:
