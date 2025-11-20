@@ -128,7 +128,7 @@ class ParallelParser:
         submit_function = ParallelParser.worker_chunk if self.mode == "process" else self.worker_chunk
         Executor = ProcessPoolExecutor if self.mode == "process" else ThreadPoolExecutor
 
-        results_by_index: Dict[int, Dict[str, List[Dict[str, Any]]]] = {}
+        merged: Dict[str, List[Dict[str, Any]]] = {}
         try:
             with Executor(max_workers=max_workers) as pool:
                 futures = {
@@ -152,26 +152,23 @@ class ParallelParser:
                 for fut in as_completed(futures):
                     idx = futures[fut]
                     try:
-                        results_by_index[idx] = fut.result()
+                        chunk_msgs_by_type = fut.result()
                     except Exception:
                         logger.exception("ParallelParser.parse: worker failed (chunk idx=%d)", idx)
-                        results_by_index[idx] = {}
+                        continue
+
+                    if not chunk_msgs_by_type:
+                        continue
+
+                    for msg_name, msg_list in chunk_msgs_by_type.items():
+                        msgs = merged.get(msg_name)
+                        if msgs is None:
+                            msgs = []
+                            merged[msg_name] = msgs
+                        msgs.extend(msg_list)
         except Exception:
             logger.exception("ParallelParser.parse: executor-level failure")
             raise
-
-        merged: Dict[str, List[Dict[str, Any]]] = {}
-        for i in range(len(chunks)):
-            chunk_msgs_by_type = results_by_index.get(i, {})
-            if not chunk_msgs_by_type:
-                continue
-
-            for msg_name, msg_list in chunk_msgs_by_type.items():
-                msgs = merged.get(msg_name)
-                if msgs is None:
-                    msgs = []
-                    merged[msg_name] = msgs
-                msgs.extend(msg_list)
 
         total_msgs = sum(len(lst) for lst in merged.values())
         logger.info("ParallelParser.parse: done, total messages=%d", total_msgs)
