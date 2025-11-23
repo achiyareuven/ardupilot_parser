@@ -1,6 +1,6 @@
 "# ardupilot_parser" 
 
-# 🔧 Constants Overview
+#  Constants Overview
 
 This section explains the core constants used by the ArduPilot BIN parser.  
 These values ensure correct message detection, schema decoding, chunking, and type-safe parsing of all log records.
@@ -59,6 +59,22 @@ Each worker receives its own slice of the file, keeping:
 - Low overhead  
 - Minimal inter-process contention  
 
+### Why split the log into small chunks (even with few processes)?
+Using small, fixed-size chunks ensures that no single worker becomes a bottleneck.  
+Even if the number of processes is low, large logs often contain sections that are heavier to parse  
+(e.g., dense GPS blocks or high-rate IMU bursts).  
+
+With smaller chunks:
+
+- A slow region in the log affects only one chunk, not an entire worker
+- Other workers can continue processing additional chunks instead of waiting
+- Workload stays balanced, preventing “one slow worker” from stalling the whole job
+- Parallel scheduling remains efficient, even on machines with few cores
+
+Chunking keeps the system responsive and avoids situations where one heavy part of the file  
+forces all workers to sit idle.
+
+
 ---
 
 ## ArduPilot Format Mapping
@@ -103,7 +119,7 @@ Latitude/longitude fields stored as integers scaled by **1e-7**.
 
 ## Binary Payload Fields
 
-### `BYTES_FIELDS: ["Data", "Blob", "Payload"]`
+### `BYTES_FIELDS: ["Data"]`
 Fields that should remain raw bytes instead of ASCII-decoded strings.  
 Used for structured binary payload messages like `DATA`, custom telemetry blocks, etc.
 
