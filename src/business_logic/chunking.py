@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 import mmap
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.utils.constants import HEADER
+from src.utils.constants import CHUNK_SIZE_BYTES
 from src.utils.logger import Logger
 
 logger = Logger.get_logger(__name__)
@@ -44,9 +44,6 @@ def find_next_message_start_offset(
 def split_file_for_processes(
     file_path: str,
     schemas_by_type: Dict[int, Dict[str, Any]],
-    num_procs: int,
-    *,
-    chunk_bytes: Optional[int] = None,
 ) -> List[Tuple[int, int]]:
     """
     Split a .BIN file into aligned byte ranges for parallel parsing.
@@ -54,28 +51,15 @@ def split_file_for_processes(
     as (start, end) offsets suitable for use with mmap slices.
     """
 
-    if chunk_bytes is None:
-        if num_procs < 1:
-            num_procs = 1
-        logger.debug("split_file_for_processes: path=%s num_procs=%d", file_path, num_procs)
-    else:
-        logger.debug("split_file_for_processes: path=%s chunk_bytes=%d", file_path, chunk_bytes)
-
-    file_size = os.path.getsize(file_path)
-    if file_size == 0:
-        return []
+    chunk_bytes = CHUNK_SIZE_BYTES
 
     with open(file_path, "rb") as file_handle:
         data = mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ)
         try:
             data_len = len(data)
-            if chunk_bytes is None:
-                approx_chunk_size_bytes = max(1, data_len // num_procs)
-                check_positions = [i * approx_chunk_size_bytes for i in range(1, num_procs)]
-            else:
-                approx_chunk_size_bytes = chunk_bytes
-                check_positions = [i * chunk_bytes for i in range(1, (data_len // chunk_bytes) + 1)]
-                check_positions = [p for p in check_positions if p < data_len]
+
+            check_positions = [i * chunk_bytes for i in range(1, (data_len // chunk_bytes) + 1)]
+            check_positions = [p for p in check_positions if p < data_len]
 
             chunk_start_positions: List[int] = [0]
 
@@ -83,6 +67,8 @@ def split_file_for_processes(
                 valid_position = find_next_message_start_offset(data, check_position, schemas_by_type)
                 if valid_position is None:
                     break
+                # Avoid duplicates if alignment finds the same header twice
+                # (e.g., when no valid next message is found and the scan re-checks the same position).
                 if valid_position > chunk_start_positions[-1]:
                     chunk_start_positions.append(valid_position)
 

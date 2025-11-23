@@ -42,7 +42,7 @@ class MavlinkLogReader:
             reader.parse_fmt_messages()
             return reader.parse_messages(wanted_names=types)
 
-    def grab_data_from_log(self,messages_to_read:List[str]) -> Dict[str, List[Dict[str, Any]]]:
+    def grab_data_from_log(self,messages_to_read:List[str] = None) -> Dict[str, List[Dict[str, Any]]]:
 
         logs_dict: Dict[str, List[Dict[str, Any]]] = {}
         try:
@@ -93,7 +93,7 @@ if __name__ == "__main__":
     from datetime import datetime
     e = datetime.now()
     a = MavlinkLogReader(r"C:\Users\achiy\logs")
-    b= a.grab_data_from_log(["ATT", "GPS", "POS", "RCIN", "RCOU", "BARO", "GPS2", "TRIG"])
+    b= a.grab_data_from_log()
     s = datetime.now()
     print(f"time:{s-e}")
     total = sum(len(lst) for lst in b.values())

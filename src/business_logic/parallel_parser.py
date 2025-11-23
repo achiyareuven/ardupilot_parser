@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union
 
 from src.business_logic.bin_parser import BinParser
 from src.business_logic.chunking import split_file_for_processes
-from src.utils.constants import CHUNK_SIZE_BYTES
+from src.utils.helpers import choose_num_workers_for_log
 from src.utils.logger import Logger
 
 logger = Logger.get_logger(__name__)
@@ -105,14 +105,12 @@ class ParallelParser:
             have_timebase,
         )
 
-        num_workers = self.num_workers or (os.cpu_count() or 1)
-
+        file_size_bytes = os.path.getsize(self.file_path)
+        num_workers = choose_num_workers_for_log(file_size_bytes=file_size_bytes)
         try:
             chunks: List[Tuple[int, int]] = split_file_for_processes(
                 file_path=self.file_path,
                 schemas_by_type=schemas_by_type,
-                num_procs=num_workers,
-                chunk_bytes=CHUNK_SIZE_BYTES,
             )
         except Exception:
             logger.exception("ParallelParser.parse: failed to split file into chunks")
@@ -122,8 +120,8 @@ class ParallelParser:
             logger.warning("ParallelParser.parse: no chunks produced (empty file or no valid messages?)")
             raise RuntimeError("No chunks produced")
 
-        max_workers = min(len(chunks), num_workers)
-        logger.info("File split | chunks=%d | workers=%d", len(chunks), max_workers)
+        max_workers = min(len(chunks), num_workers) if self.mode == "process" else None
+        logger.info("File split | chunks=%d | workers=%s", len(chunks), max_workers)
 
         submit_function = ParallelParser.worker_chunk if self.mode == "process" else self.worker_chunk
         Executor = ProcessPoolExecutor if self.mode == "process" else ThreadPoolExecutor
