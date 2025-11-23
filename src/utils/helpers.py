@@ -117,3 +117,31 @@ def open_file_and_mmap(path: str) -> Tuple[IO[bytes], mmap.mmap]:
         raise
 
     return file_handler, memory_map
+
+
+import os
+import psutil
+from typing import Optional
+
+
+def choose_num_workers_for_log(file_size_bytes: int,) -> int:
+
+    num_cpu = os.cpu_count() or 1
+
+    available_gb = psutil.virtual_memory().available / (1024 ** 3)
+    file_size_gb = max(0.01, file_size_bytes / (1024 ** 3))
+
+    # Base memory ~0.25GB per worker + small growth by file size
+    process_memory_gb = 0.25 + 0.20 * file_size_gb
+
+    # Clamp values to avoid insane numbers:
+    # at least 0.25GB per worker, at most 1.5GB
+    process_memory_gb = min(max(process_memory_gb, 0.25), 1.5)
+
+    # How many workers can RAM support
+    max_by_memory = max(1, int(available_gb // process_memory_gb))
+
+    # Combine RAM + CPU limits
+    workers = min(num_cpu, max_by_memory)
+
+    return max(1, workers)
